@@ -18,158 +18,215 @@ const (
 	// Send pings to peer with this period. Must be less than pongWait.
 	pingPeriod = (pongWait * 9) / 10
 
-	//Time allowed to do a request and recive a response.
+	//Time allowed to do a request and recive target response. Must be more than writeWait.
 	requestWait = (writeWait * 11) / 10
 )
 
-type Exporter struct {
+type Client struct {
 	conn      *websocket.Conn
-	readChan  chan []byte
-	writeChan chan []byte
+	requests  chan []byte
+	responses chan []byte
+	close     chan struct{}
 	closed    chan struct{}
 }
 
-func NewExporter(conn *websocket.Conn) *Exporter {
-	readChan := make(chan []byte)
-	writeChan := make(chan []byte)
+func NewClient(conn *websocket.Conn) *Client {
+	requests := make(chan []byte)
+	responses := make(chan []byte)
+	close := make(chan struct{})
 	closed := make(chan struct{})
 
-	go func() {
-		defer conn.Close()
-		conn.SetReadDeadline(time.Now().Add(pongWait))
-		conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-					log.Printf("error: %v", err)
-				}
-				break
-			}
-
-			select {
-			case readChan <- message:
-			case <-closed:
-				return
-			}
-		}
-	}()
-
-	go func() {
-		ticker := time.NewTicker(pingPeriod)
-		defer func() {
-			ticker.Stop()
-			conn.Close()
-		}()
-		for {
-			select {
-			case message, ok := <-writeChan:
-				conn.SetWriteDeadline(time.Now().Add(writeWait))
-				if !ok {
-					conn.WriteMessage(websocket.CloseMessage, []byte{})
-					return
-				}
-
-				conn.WriteMessage(websocket.TextMessage, message)
-			case <-ticker.C:
-				conn.SetWriteDeadline(time.Now().Add(writeWait))
-				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					return
-				}
-			case <-closed:
-				return
-			}
-		}
-	}()
-	return &Exporter{
+	c := &Client{
 		conn:      conn,
-		readChan:  readChan,
-		writeChan: writeChan,
+		requests:  requests,
+		responses: responses,
+		close:     close,
 		closed:    closed,
+	}
+
+	go c.waitToClose()
+	go c.pumpRequests()
+	go c.pumpResponses()
+
+	return c
+}
+
+func (c *Client) pumpRequests() {
+	ticker := time.NewTicker(pingPeriod)
+	defer ticker.Stop()
+
+	conn := c.conn
+	for {
+		select {
+		case message, ok := <-c.requests:
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				conn.WriteMessage(websocket.CloseMessage, []byte{})
+				c.Close()
+				return
+			}
+
+			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				log.Printf("client: %v", err)
+				c.Close()
+				return
+			}
+
+		case <-ticker.C:
+			conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				c.Close()
+				return
+			}
+		case <-c.closed:
+			return
+		}
 	}
 }
 
-func (e *Exporter) Request(url string) ([]byte, error) {
+func (c *Client) pumpResponses() {
+	conn := c.conn
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("client: %v", err)
+			}
+
+			c.Close()
+			break
+		}
+
+		select {
+		case c.responses <- message:
+		case <-c.closed:
+			return
+		}
+	}
+}
+
+func (c *Client) waitToClose() {
+	<-c.close
+	close(c.closed)
+	c.conn.Close()
+}
+
+//Notifie the client to close without blocking the current goroutine.
+func (c *Client) Close() {
+	select {
+	case c.close <- struct{}{}:
+	default:
+	}
+}
+
+func (e *Client) Closed() bool {
+	select {
+	case <-e.closed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *Client) Request(url string) ([]byte, error) {
 	t := time.NewTimer(requestWait)
 	select {
-	case e.writeChan <- []byte(url):
+	case c.requests <- []byte(url):
 		select {
-		case data := <-e.readChan:
+		case data := <-c.responses:
 			return data, nil
 		case <-t.C:
 			return nil, errors.New("request timeout")
-		case <-e.closed:
-			return nil, errors.New("server closed")
+		case <-c.closed:
+			return nil, errors.New("client closed")
 		}
 	case <-t.C:
 		return nil, errors.New("request timeout")
-	case <-e.closed:
-		return nil, errors.New("server closed")
+	case <-c.closed:
+		return nil, errors.New("client closed")
 	}
 }
 
-func (e *Exporter) Close() {
-	e.conn.Close()
-	close(e.closed)
+type Gateway struct {
+	pool     []*Client
+	register chan *Client
+	require  chan *Client
+	closed   chan bool
 }
 
-type ExporterPool struct {
-	pool      []*Exporter
-	addChan   chan *Exporter
-	getChan   chan *Exporter
-	closeChan chan bool
-}
-
-func NewExporterPool() *ExporterPool {
-	pool := ExporterPool{
-		pool:      make([]*Exporter, 0),
-		addChan:   make(chan *Exporter),
-		getChan:   make(chan *Exporter),
-		closeChan: make(chan bool),
+func NewGateway() *Gateway {
+	g := Gateway{
+		pool:     make([]*Client, 0),
+		register: make(chan *Client),
+		require:  make(chan *Client),
+		closed:   make(chan bool),
 	}
 
-	go func() {
-		for {
-			if len(pool.pool) > 0 {
-				select {
-				case exporter := <-pool.addChan:
-					pool.pool = append(pool.pool, exporter)
-				case pool.getChan <- pool.pool[0]:
-					pool.pool = pool.pool[1:]
-				case <-pool.closeChan:
-					for _, exporter := range pool.pool {
-						exporter.Close()
-					}
+	go g.pump()
+
+	return &g
+}
+
+func (g *Gateway) pump() {
+	for {
+		if len(g.pool) > 0 {
+			select {
+			case c := <-g.register:
+				g.pool = append(g.pool, c)
+			case g.require <- g.pool[0]:
+				g.pool = g.pool[1:]
+			case <-g.closed:
+				for _, c := range g.pool {
+					c.Close()
 				}
-			} else {
-				select {
-				case exporter := <-pool.addChan:
-					pool.pool = append(pool.pool, exporter)
-				case <-pool.closeChan:
-					for _, exporter := range pool.pool {
-						exporter.Close()
-					}
+				return
+			}
+		} else {
+			select {
+			case c := <-g.register:
+				g.pool = append(g.pool, c)
+			case <-g.closed:
+				for _, c := range g.pool {
+					c.Close()
 				}
+				return
 			}
 		}
-	}()
-
-	return &pool
-}
-
-func (pool *ExporterPool) Add(e *Exporter) {
-	pool.addChan <- e
-}
-
-func (pool *ExporterPool) Get() (*Exporter, error) {
-	select {
-	case e := <-pool.getChan:
-		return e, nil
-	default:
-		return nil, errors.New("get exporter timeout")
 	}
 }
 
-func (pool *ExporterPool) Close() {
-	pool.closeChan <- true
+func (g *Gateway) Request(url string) ([]byte, error) {
+	t := time.NewTimer(requestWait)
+
+out:
+	for {
+		select {
+		case c := <-g.require:
+			if c.Closed() {
+				continue out
+			}
+			resp, err := c.Request(url)
+			if err != nil {
+				log.Printf("gateway: %v", err)
+				c.Close()
+				continue out
+			}
+
+			g.register <- c
+
+			return resp, nil
+		case <-t.C:
+			return nil, errors.New("request timeout")
+		case <-g.closed:
+			break out
+		}
+	}
+
+	return nil, errors.New("gateway tiemout")
+}
+
+func (g *Gateway) Close() {
+	close(g.closed)
 }

@@ -16,9 +16,9 @@ type APIResp struct {
 }
 
 type Server struct {
-	exporterPool *ExporterPool
-	upgrader     websocket.Upgrader
-	config       *Config
+	gateway  *Gateway
+	upgrader websocket.Upgrader
+	config   *Config
 }
 
 func NewServer(config *Config) *Server {
@@ -29,10 +29,21 @@ func NewServer(config *Config) *Server {
 	}
 
 	return &Server{
-		exporterPool: NewExporterPool(),
-		upgrader:     upgrader,
-		config:       config,
+		gateway:  NewGateway(),
+		upgrader: upgrader,
+		config:   config,
 	}
+}
+
+func (s *Server) ServeWs(w http.ResponseWriter, r *http.Request) {
+	conn, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("upgrade: %v", err)
+		return
+	}
+
+	client := NewClient(conn)
+	s.gateway.register <- client
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -41,32 +52,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Print(url)
 
 	if strings.HasPrefix(url, "/ws") {
-		conn, err := s.upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Print(err)
-			return
-		}
-
-		exporter := NewExporter(conn)
-		s.exporterPool.Add(exporter)
-
+		s.ServeWs(w, r)
 	} else if strings.HasPrefix(url, "/character-window/get-characters") ||
 		strings.HasPrefix(url, "/account/view-profile/") ||
 		strings.HasPrefix(url, "/character-window/get-passive-skills") ||
 		strings.HasPrefix(url, "/character-window/get-items") {
-		exporter, err := s.exporterPool.Get()
+		data, err := s.gateway.Request(url)
 		if err != nil {
+			log.Printf("gateway: %v", err)
 			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 			return
 		}
-		data, err := exporter.Request(url)
-		if err != nil {
-			log.Printf("error: %v", err)
-			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
-			exporter.Close()
-			return
-		}
-		s.exporterPool.Add(exporter)
 		w.Write(data)
 	} else if strings.HasPrefix(url, "/patch") {
 		if r.Method == http.MethodPost {

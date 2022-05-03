@@ -58,8 +58,9 @@ func LoadConfig() (*Config, error) {
 		c = NewConfig()
 		err := SaveConifg(c)
 		if err != nil {
-			log.Printf("error: %v", err)
+			log.Printf("config: %v", err)
 		}
+		return c, nil
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -82,6 +83,5 @@ func SaveConifg(c *Config) error {
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(configPath, data, 0777)
-	return err
+	return os.WriteFile(configPath, data, 0777)
 }

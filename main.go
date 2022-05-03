@@ -10,29 +10,29 @@ import (
 )
 
 func main() {
-
 	config, err := LoadConfig()
 	if err != nil {
 		fmt.Printf("加载配置文件失败： %v,\n", err)
 		pause()
 	}
 
-	startErr := make(chan struct{})
+	listen := fmt.Sprintf(":%v", config.ListenPort)
+	startupFailed := make(chan struct{})
 
 	go func() {
 		select {
 		case <-time.After(500 * time.Millisecond):
-			log.Printf("listening: %v", fmt.Sprintf(":%v", config.ListenPort))
-		case <-startErr:
+			log.Printf("listening: %v", listen)
+		case <-startupFailed:
 			return
 		}
 	}()
 
-	err = http.ListenAndServe(fmt.Sprintf(":%v", config.ListenPort), NewServer(config))
+	err = http.ListenAndServe(listen, NewServer(config))
 
 	if err != nil {
-		startErr <- struct{}{}
-		fmt.Printf("启动程序失败，请检查端口是否被占用: %v\n", err)
+		startupFailed <- struct{}{}
+		fmt.Printf("启动失败，请检查端口是否被占用: %v\n", err)
 		pause()
 	}
 }
