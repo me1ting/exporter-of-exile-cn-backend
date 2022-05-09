@@ -64,8 +64,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Write(data)
-	} else if strings.HasPrefix(url, "/patch") {
-		if r.Method == http.MethodPost {
+	} else if url == "/pob/patch" {
+		//https://stackoverflow.com/questions/49333264/request-header-field-content-type-is-not-allowed-by-access-control-allow-headers
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		if r.Method == http.MethodOptions {
+			w.Header().Add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE")
+			w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+		} else if r.Method == http.MethodPost {
 			filePath := r.Form.Get("filePath")
 			err := Patch(filePath, fmt.Sprintf("http://localhost:%v/", s.config.ListenPort))
 			if err != nil {

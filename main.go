@@ -16,13 +16,13 @@ func main() {
 		pause()
 	}
 
-	listen := fmt.Sprintf(":%v", config.ListenPort)
+	listen := fmt.Sprintf("localhost:%v", config.ListenPort)
 	startupFailed := make(chan struct{})
 
 	go func() {
 		select {
 		case <-time.After(500 * time.Millisecond):
-			log.Printf("listening: %v", listen)
+			log.Printf("Listening on %v", listen)
 		case <-startupFailed:
 			return
 		}

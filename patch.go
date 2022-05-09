@@ -47,12 +47,13 @@ func doPatch(file string, hostName string) error {
 }
 
 func Patch(filePath string, hostName string) error {
-	importTabPath := path.Join(filePath, relativePathOfImportTabToPOECharm)
+	importTabPath := filePath
 	if strings.HasSuffix(filePath, importTabName) {
 		if _, err := os.Stat(importTabPath); err != nil {
 			return errors.New("ImportTab.lua not found")
 		}
 	} else {
+		importTabPath = path.Join(filePath, relativePathOfImportTabToPOECharm)
 		if _, err := os.Stat(importTabPath); err != nil {
 			importTabPath = path.Join(filePath, relativePathOfImportTabToPOB)
 			if _, err := os.Stat(importTabPath); err != nil {
