@@ -3,18 +3,13 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log"
 	"os"
-	"path/filepath"
 )
 
 const (
 	// 1025~49151
 	// https://docs.microsoft.com/zh-cn/troubleshoot/windows-server/networking/default-dynamic-port-range-tcpip-chang
 	defaultListenPort = "8655"
-
-	configFileName = "config.json"
 )
 
 type Config struct {
@@ -45,25 +40,12 @@ func ConfigFromJson(b []byte) (*Config, error) {
 	return c, nil
 }
 
-func LoadConfig() (*Config, error) {
-	var c *Config
-	ex, err := os.Executable()
-	if err != nil {
+func LoadConfig(file string) (*Config, error) {
+	if _, err := os.Stat(file); errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	exPath := filepath.Dir(ex)
-	configPath := fmt.Sprintf("%v\\%v", exPath, configFileName)
 
-	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
-		c = NewConfig()
-		err := SaveConifg(c)
-		if err != nil {
-			log.Printf("config: %v", err)
-		}
-		return c, nil
-	}
-
-	data, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(file)
 	if err != nil {
 		return nil, err
 	}
@@ -71,17 +53,10 @@ func LoadConfig() (*Config, error) {
 	return ConfigFromJson(data)
 }
 
-func SaveConifg(c *Config) error {
-	ex, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	exPath := filepath.Dir(ex)
-	configPath := fmt.Sprintf("%v\\%v", exPath, configFileName)
-
+func (c *Config) Save(file string) error {
 	data, err := c.ToJson()
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(configPath, data, 0777)
+	return os.WriteFile(file, data, 0644)
 }
