@@ -1,19 +1,47 @@
 package main
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
+	"path"
+	"path/filepath"
 	"time"
 )
 
+const (
+	logFileName    = "log.txt"
+	configFileName = "config.json"
+)
+
 func main() {
-	config, err := LoadConfig()
+	var err error
+
+	ex, err := os.Executable()
 	if err != nil {
-		fmt.Printf("加载配置文件失败： %v,\n", err)
-		pause()
+		fmt.Errorf("can't read exec path\n")
+		return
+	}
+
+	exPath := filepath.Dir(ex)
+
+	err = InitGlobalLogger(path.Join(exPath, logFileName))
+	if err != nil {
+		fmt.Errorf("init logger failed\n")
+	}
+
+	var config *Config
+
+	configPath := path.Join(exPath, configFileName)
+	if _, err := os.Stat(configPath); errors.Is(err, os.ErrNotExist) {
+		config = NewConfig()
+		config.Save(configPath)
+	} else {
+		if config, err = LoadConfig(configPath); err != nil {
+			Logger.Fatalln("load config failed")
+			return
+		}
 	}
 
 	listen := fmt.Sprintf("localhost:%v", config.ListenPort)
@@ -22,7 +50,7 @@ func main() {
 	go func() {
 		select {
 		case <-time.After(500 * time.Millisecond):
-			log.Printf("Listening on %v", listen)
+			Logger.Printf("Listening on %v\n", listen)
 		case <-startupFailed:
 			return
 		}
@@ -32,13 +60,6 @@ func main() {
 
 	if err != nil {
 		startupFailed <- struct{}{}
-		fmt.Printf("启动失败，请检查端口是否被占用: %v\n", err)
-		pause()
+		Logger.Fatalf("启动失败，请检查端口是否被占用: %v\n", err)
 	}
-}
-
-func pause() {
-	fmt.Print("\n")
-	fmt.Print("关闭窗口或按回车继续...")
-	bufio.NewReader(os.Stdin).ReadBytes('\n')
 }

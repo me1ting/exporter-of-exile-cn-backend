@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -67,7 +66,7 @@ func (c *Client) pumpRequests() {
 			}
 
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				log.Printf("client: %v", err)
+				Logger.Printf("client: %v", err)
 				c.Close()
 				return
 			}
@@ -92,7 +91,7 @@ func (c *Client) pumpResponses() {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("client: %v", err)
+				Logger.Printf("client: %v", err)
 			}
 
 			c.Close()
@@ -209,7 +208,7 @@ out:
 			}
 			resp, err := c.Request(url)
 			if err != nil {
-				log.Printf("gateway: %v", err)
+				Logger.Printf("gateway: %v", err)
 				c.Close()
 				continue out
 			}

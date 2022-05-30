@@ -1,9 +1,6 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"log"
 	"net/http"
 	"strings"
 
@@ -38,7 +35,7 @@ func NewServer(config *Config) *Server {
 func (s *Server) ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("upgrade: %v", err)
+		Logger.Printf("upgrade: %v", err)
 		return
 	}
 
@@ -49,7 +46,7 @@ func (s *Server) ServeWs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	url := r.URL.String()
-	log.Print(url)
+	Logger.Print(url)
 
 	if strings.HasPrefix(url, "/ws") {
 		s.ServeWs(w, r)
@@ -59,30 +56,10 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(url, "/character-window/get-items") {
 		data, err := s.gateway.Request(url)
 		if err != nil {
-			log.Printf("gateway: %v", err)
+			Logger.Printf("gateway: %v", err)
 			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 			return
 		}
 		w.Write(data)
-	} else if url == "/pob/patch" {
-		//https://stackoverflow.com/questions/49333264/request-header-field-content-type-is-not-allowed-by-access-control-allow-headers
-		w.Header().Add("Access-Control-Allow-Origin", "*")
-		if r.Method == http.MethodOptions {
-			w.Header().Add("Access-Control-Allow-Methods", "GET,PUT,POST,DELETE")
-			w.Header().Add("Access-Control-Allow-Headers", "Content-Type")
-			w.WriteHeader(http.StatusNoContent)
-		} else if r.Method == http.MethodPost {
-			filePath := r.Form.Get("filePath")
-			err := Patch(filePath, fmt.Sprintf("http://localhost:%v/", s.config.ListenPort))
-			if err != nil {
-				data, _ := json.Marshal(APIResp{Code: 400, Msg: err.Error()})
-				w.Write(data)
-				return
-			}
-
-			data, _ := json.Marshal(APIResp{Code: 200, Msg: "success"})
-			w.Write(data)
-			return
-		}
 	}
 }
