@@ -20,7 +20,7 @@ func main() {
 
 	ex, err := os.Executable()
 	if err != nil {
-		fmt.Errorf("can't read exec path\n")
+		fmt.Println("can't read exec path")
 		return
 	}
 
@@ -28,7 +28,7 @@ func main() {
 
 	err = InitGlobalLogger(path.Join(exPath, logFileName))
 	if err != nil {
-		fmt.Errorf("init logger failed\n")
+		fmt.Println("init logger failed")
 	}
 
 	var config *Config
@@ -50,7 +50,7 @@ func main() {
 	go func() {
 		select {
 		case <-time.After(500 * time.Millisecond):
-			Logger.Printf("Listening on %v\n", listen)
+			Logger.Printf("Listening on %v\r\n", listen)
 		case <-startupFailed:
 			return
 		}
@@ -60,6 +60,6 @@ func main() {
 
 	if err != nil {
 		startupFailed <- struct{}{}
-		Logger.Fatalf("启动失败，请检查端口是否被占用: %v\n", err)
+		Logger.Fatalf("启动失败，请检查端口是否被占用: %v\r\n", err)
 	}
 }

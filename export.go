@@ -66,7 +66,7 @@ func (c *Client) pumpRequests() {
 			}
 
 			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				Logger.Printf("client: %v", err)
+				Logger.Printf("client: %v\r\n", err)
 				c.Close()
 				return
 			}
@@ -91,7 +91,7 @@ func (c *Client) pumpResponses() {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				Logger.Printf("client: %v", err)
+				Logger.Printf("client: %v\r\n", err)
 			}
 
 			c.Close()
@@ -208,7 +208,7 @@ out:
 			}
 			resp, err := c.Request(url)
 			if err != nil {
-				Logger.Printf("gateway: %v", err)
+				Logger.Printf("gateway: %v\r\n", err)
 				c.Close()
 				continue out
 			}

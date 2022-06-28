@@ -35,7 +35,7 @@ func NewServer(config *Config) *Server {
 func (s *Server) ServeWs(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		Logger.Printf("upgrade: %v", err)
+		Logger.Printf("server:  %v\r\n", err)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) ServeWs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	url := r.URL.String()
-	Logger.Print(url)
+	Logger.Printf("server: request %v\r\n", url)
 
 	if strings.HasPrefix(url, "/ws") {
 		s.ServeWs(w, r)
@@ -56,7 +56,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		strings.HasPrefix(url, "/character-window/get-items") {
 		data, err := s.gateway.Request(url)
 		if err != nil {
-			Logger.Printf("gateway: %v", err)
+			Logger.Printf("gateway: %v\r\n", err)
 			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 			return
 		}
